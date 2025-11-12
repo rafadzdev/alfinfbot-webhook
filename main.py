@@ -104,17 +104,17 @@ def crear_entrada_odoo(numero):
 
 # ====== BUSCAR EMPLEADO POR NÚMERO DE TELÉFONO ======
 def buscar_empleado_por_numero(numero):
-    # Normalizar el número (quitar espacios, +, etc.)
+    # 🔧 Normalizar número (eliminar espacios, +, etc.)
     numero = numero.replace("+", "").replace(" ", "")
     if numero.startswith("34"):
-        numero = numero[2:]  # quitar el prefijo 34 si lo trae
-    if numero.startswith("0"):
-        numero = numero[1:]  # eliminar cero inicial (por si acaso)
+        numero = numero[2:]
 
-    print(f"🔍 Buscando en Odoo coincidencias con número: {numero}")
+    print(f"🔍 Buscando empleado vinculado al partner con móvil: {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
-    payload = {
+
+    # Paso 1: buscar partner por campo 'mobile' en res.partner
+    payload_partner = {
         "jsonrpc": "2.0",
         "method": "call",
         "params": {
@@ -124,9 +124,9 @@ def buscar_empleado_por_numero(numero):
                 os.environ["ODOO_DB"],
                 2,  # ID usuario admin
                 os.environ["ODOO_PASS"],
-                "hr.employee",
+                "res.partner",
                 "search",
-                [[["mobile_phone", "ilike", numero]]]
+                [[["mobile", "ilike", numero]]]
             ]
         }
     }
@@ -139,4 +139,5 @@ def buscar_empleado_por_numero(numero):
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
