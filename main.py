@@ -35,11 +35,20 @@ def webhook():
     try:
         entry = data["entry"][0]["changes"][0]["value"]
 
-        # Solo procesar si contiene mensajes reales
+        # ✅ Solo procesar si contiene mensajes (no estados)
         if "messages" in entry:
             mensaje = entry["messages"][0]
-            numero = mensaje["from"]
-            texto = mensaje.get("text", {}).get("body", "").strip().lower()
+            numero = mensaje.get("from")
+
+            # ✅ Obtener texto del mensaje si existe
+            texto = mensaje.get("text", {}).get("body", "")
+            if not texto:
+                print("⚠️ Mensaje sin texto. Ignorado.")
+                return "EVENT_RECEIVED", 200
+
+            # Normalizar texto
+            texto = texto.strip().lower()
+            print(f"💬 Mensaje de {numero}: {texto}")
 
             if texto == "entrada":
                 resultado = crear_entrada_odoo(numero)
@@ -56,12 +65,13 @@ def webhook():
                 enviar_mensaje(numero, "No te entendí. Escribe 'entrada' o 'listado'.")
 
         else:
-            print("ℹ️ Evento sin mensajes (solo estado de entrega). Ignorado.")
+            print("ℹ️ Evento sin mensajes (solo estado de entrega o lectura). Ignorado.")
 
     except Exception as e:
         print("⚠️ Error procesando mensaje:", e)
 
     return "EVENT_RECEIVED", 200
+
 
 
 # =====================
@@ -246,4 +256,5 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
