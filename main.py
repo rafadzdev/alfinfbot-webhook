@@ -104,6 +104,15 @@ def crear_entrada_odoo(numero):
 
 # ====== BUSCAR EMPLEADO POR NÚMERO DE TELÉFONO ======
 def buscar_empleado_por_numero(numero):
+    # Normalizar el número (quitar espacios, +, etc.)
+    numero = numero.replace("+", "").replace(" ", "")
+    if numero.startswith("34"):
+        numero = numero[2:]  # quitar el prefijo 34 si lo trae
+    if numero.startswith("0"):
+        numero = numero[1:]  # eliminar cero inicial (por si acaso)
+
+    print(f"🔍 Buscando en Odoo coincidencias con número: {numero}")
+
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
     payload = {
         "jsonrpc": "2.0",
@@ -113,15 +122,14 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID de usuario admin
+                2,  # ID usuario admin
                 os.environ["ODOO_PASS"],
                 "hr.employee",
                 "search",
-                [[["mobile_phone", "=", numero]]]
+                [[["mobile_phone", "ilike", numero]]]
             ]
         }
     }
-
     # 👇 Evita error SSL en Render
     response = requests.post(url, json=payload, verify=False).json()
     result = response.get("result", [])
@@ -131,3 +139,4 @@ def buscar_empleado_por_numero(numero):
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
