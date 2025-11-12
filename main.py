@@ -6,7 +6,6 @@ app = Flask(__name__)
 
 VERIFY_TOKEN = "alfinfbot-token"
 
-# ====== VERIFICACIÓN WEBHOOK (META) ======
 @app.route("/", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
@@ -18,12 +17,10 @@ def verify():
         return "Error: token inválido", 403
 
 
-# ====== PROCESAR MENSAJES ENTRANTES ======
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("📩 Mensaje recibido:")
-    print(json.dumps(data, indent=4, ensure_ascii=False))
+    print("📩 Mensaje recibido:", json.dumps(data, indent=2, ensure_ascii=False))
 
     try:
         entry = data["entry"][0]["changes"][0]["value"]
@@ -33,8 +30,11 @@ def webhook():
             texto = mensaje["text"]["body"].strip().lower()
 
             if texto == "entrada":
-                crear_entrada_odoo(numero)
-                enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
+                resultado = crear_entrada_odoo(numero)
+                if resultado:
+                    enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
+                else:
+                    enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
             else:
                 enviar_mensaje(numero, "No te entendí. Escribe 'entrada' para registrar tu entrada.")
     except Exception as e:
@@ -43,7 +43,6 @@ def webhook():
     return "EVENT_RECEIVED", 200
 
 
-# ====== FUNCIÓN PARA ENVIAR MENSAJES A WHATSAPP ======
 def enviar_mensaje(numero, texto):
     url = f"https://graph.facebook.com/v20.0/{os.environ['META_PHONE_ID']}/messages"
     headers = {
@@ -58,8 +57,13 @@ def enviar_mensaje(numero, texto):
     requests.post(url, headers=headers, json=data)
 
 
-# ====== FUNCIÓN PARA CREAR ENTRADA EN ODOO ======
 def crear_entrada_odoo(numero):
+    print(f"🔎 Buscando empleado con número: {numero}")
+    employee_id = buscar_empleado_por_numero(numero)
+    if not employee_id:
+        print("⚠️ Empleado no encontrado en Odoo")
+        return False
+
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -71,23 +75,23 @@ def crear_entrada_odoo(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                1,
+                2,  # ID del usuario administrador (ajústalo si es necesario)
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
                 "create",
                 [{
-                    "employee_id": buscar_empleado_por_numero(numero),
-                    "check_in": now,
+                    "employee_id": employee_id,
+                    "check_in": now
                 }]
             ]
         }
     }
 
     response = requests.post(url, json=payload)
-    print("📤 Respuesta de Odoo:", response.text)
+    print("📤 Respuesta Odoo:", response.text)
+    return True
 
 
-# ====== BUSCAR EMPLEADO POR NÚMERO DE TELÉFONO ======
 def buscar_empleado_por_numero(numero):
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
     payload = {
@@ -98,17 +102,18 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                1,
+                2,  # ID de usuario admin
                 os.environ["ODOO_PASS"],
                 "hr.employee",
                 "search",
-                [[["work_phone", "=", numero]]]
+                [[["mobile_phone", "=", numero]]]
             ]
         }
     }
-    res = requests.post(url, json=payload).json()
-    employee_ids = res.get("result", [])
-    return employee_ids[0] if employee_ids else False
+
+    response = requests.post(url, json=payload).json()
+    result = response.get("result", [])
+    return result[0] if result else None
 
 
 if __name__ == "__main__":
