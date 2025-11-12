@@ -1,17 +1,14 @@
 from flask import Flask, request, jsonify
-import requests, os, json
+import requests, os, json, urllib3
 from datetime import datetime
-import urllib3
 
-# Desactivar advertencias SSL (solo necesario porque el servidor Odoo no tiene cadena SSL completa)
+# Desactivar advertencias SSL (si el servidor Odoo no tiene cadena completa)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
 VERIFY_TOKEN = "alfinfbot-token"
 
-
-# ====== VERIFICACIÓN WEBHOOK (META) ======
 @app.route("/", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
@@ -23,7 +20,6 @@ def verify():
         return "Error: token inválido", 403
 
 
-# ====== PROCESAR MENSAJES ENTRANTES ======
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -50,7 +46,6 @@ def webhook():
     return "EVENT_RECEIVED", 200
 
 
-# ====== ENVIAR MENSAJE A WHATSAPP ======
 def enviar_mensaje(numero, texto):
     url = f"https://graph.facebook.com/v20.0/{os.environ['META_PHONE_ID']}/messages"
     headers = {
@@ -62,10 +57,13 @@ def enviar_mensaje(numero, texto):
         "to": numero,
         "text": {"body": texto}
     }
-    requests.post(url, headers=headers, json=data)
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        print("📤 Respuesta Meta:", response.text)
+    except Exception as e:
+        print("⚠️ Error enviando mensaje:", e)
 
 
-# ====== CREAR ENTRADA EN ODOO ======
 def crear_entrada_odoo(numero):
     print(f"🔎 Buscando empleado con número: {numero}")
     employee_id = buscar_empleado_por_numero(numero)
@@ -84,7 +82,7 @@ def crear_entrada_odoo(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID del usuario administrador (ajústalo si usas otro usuario)
+                2,  # ID usuario admin
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
                 "create",
@@ -96,19 +94,16 @@ def crear_entrada_odoo(numero):
         }
     }
 
-    # 👇 Evita error SSL en Render
     response = requests.post(url, json=payload, verify=False)
     print("📤 Respuesta Odoo:", response.text)
     return True
 
 
-# ====== BUSCAR EMPLEADO POR NÚMERO DE TELÉFONO ======
 def buscar_empleado_por_numero(numero):
-    # 🔧 Normalizar número (eliminar espacios, +, etc.)
+    # Normalizar el número
     numero = numero.replace("+", "").replace(" ", "")
     if numero.startswith("34"):
         numero = numero[2:]
-
     print(f"🔍 Buscando empleado vinculado al partner con móvil: {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
@@ -122,7 +117,7 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID usuario admin
+                2,
                 os.environ["ODOO_PASS"],
                 "res.partner",
                 "search",
@@ -130,14 +125,38 @@ def buscar_empleado_por_numero(numero):
             ]
         }
     }
-    # 👇 Evita error SSL en Render
-    response = requests.post(url, json=payload, verify=False).json()
-    result = response.get("result", [])
-    return result[0] if result else None
+
+    response_partner = requests.post(url, json=payload_partner, verify=False).json()
+    partners = response_partner.get("result", [])
+
+    if not partners:
+        print("⚠️ No se encontró ningún contacto con ese número en res.partner")
+        return None
+
+    partner_id = partners[0]
+
+    # Paso 2: buscar empleado vinculado a ese partner_id
+    payload_employee = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                os.environ["ODOO_DB"],
+                2,
+                os.environ["ODOO_PASS"],
+                "hr.employee",
+                "search",
+                [[["address_home_id", "=", partner_id]]]
+            ]
+        }
+    }
+
+    response_employee = requests.post(url, json=payload_employee, verify=False).json()
+    employees = response_employee.get("result", [])
+    return employees[0] if employees else None
 
 
-# ====== EJECUCIÓN ======
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-
