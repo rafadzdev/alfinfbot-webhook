@@ -32,14 +32,20 @@ def webhook():
             numero = mensaje["from"]
             texto = mensaje["text"]["body"].strip().lower()
 
-            if texto == "entrada":
-                resultado = crear_entrada_odoo(numero)
-                if resultado:
-                    enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
-                else:
-                    enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
+        if texto == "entrada":
+            resultado = crear_entrada_odoo(numero)
+            if resultado:
+                enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
             else:
-                enviar_mensaje(numero, "No te entendí. Escribe 'entrada' para registrar tu entrada.")
+                enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
+        
+        elif texto == "listado":
+            listado = obtener_listado_contactos()
+            enviar_mensaje(numero, listado)
+        
+        else:
+            enviar_mensaje(numero, "No te entendí. Escribe 'entrada' o 'listado'.")
+
     except Exception as e:
         print("⚠️ Error procesando mensaje:", e)
 
@@ -97,6 +103,47 @@ def crear_entrada_odoo(numero):
     response = requests.post(url, json=payload, verify=False)
     print("📤 Respuesta Odoo:", response.text)
     return True
+
+def obtener_listado_contactos():
+    print("📋 Solicitando listado de contactos en res.partner...")
+
+    url = f"{os.environ['ODOO_URL']}/jsonrpc"
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                os.environ["ODOO_DB"],
+                2,  # ID del usuario admin
+                os.environ["ODOO_PASS"],
+                "res.partner",
+                "search_read",
+                [[], ["name", "phone", "mobile", "email"]],
+                {"limit": 20}  # 🔹 Muestra los primeros 20 contactos
+            ]
+        }
+    }
+
+    try:
+        response = requests.post(url, json=payload, verify=False).json()
+        partners = response.get("result", [])
+
+        if not partners:
+            return "⚠️ No se encontraron contactos en Odoo."
+
+        texto = "📋 *Listado de contactos:*\n"
+        for p in partners:
+            nombre = p.get("name", "Sin nombre")
+            phone = p.get("phone") or p.get("mobile") or "Sin teléfono"
+            email = p.get("email") or "-"
+            texto += f"\n• {nombre} ({phone}) 📧 {email}"
+        return texto[:3900]  # Límite de 4096 caracteres por mensaje WhatsApp
+
+    except Exception as e:
+        print("⚠️ Error obteniendo listado:", e)
+        return "❌ Error al obtener el listado desde Odoo."
 
 
 def buscar_empleado_por_numero(numero):
@@ -188,5 +235,6 @@ def buscar_empleado_por_numero(numero):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
