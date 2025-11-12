@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os
+import json
 
 app = Flask(__name__)
 
@@ -22,10 +23,13 @@ def verify():
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("📩 Mensaje recibido:", data)
+    print("📩 Mensaje recibido de Meta:")
+    print(json.dumps(data, indent=4, ensure_ascii=False))
     return "EVENT_RECEIVED", 200
+
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
