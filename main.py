@@ -100,15 +100,16 @@ def crear_entrada_odoo(numero):
 
 
 def buscar_empleado_por_numero(numero):
-    # Normalizar el número
+    # 🔧 Limpiar el número recibido
     numero = numero.replace("+", "").replace(" ", "")
     if numero.startswith("34"):
         numero = numero[2:]
-    print(f"🔍 Buscando empleado vinculado al partner con móvil: {numero}")
+
+    print(f"🔍 Buscando empleado vinculado al partner con móvil o teléfono: {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
-    # Paso 1: buscar partner por campo 'mobile' en res.partner
+    # Paso 1: buscar partner por 'mobile' o 'phone'
     payload_partner = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -117,11 +118,15 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,
+                2,  # ID admin
                 os.environ["ODOO_PASS"],
                 "res.partner",
                 "search",
-                [[["mobile", "ilike", numero]]]
+                [[
+                    "|",
+                    ["mobile", "ilike", numero],
+                    ["phone", "ilike", numero]
+                ]]
             ]
         }
     }
@@ -134,8 +139,9 @@ def buscar_empleado_por_numero(numero):
         return None
 
     partner_id = partners[0]
+    print(f"✅ Contacto encontrado en res.partner ID={partner_id}")
 
-    # Paso 2: buscar empleado vinculado a ese partner_id
+    # Paso 2: buscar empleado vinculado al partner
     payload_employee = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -155,8 +161,20 @@ def buscar_empleado_por_numero(numero):
 
     response_employee = requests.post(url, json=payload_employee, verify=False).json()
     employees = response_employee.get("result", [])
+
+    if not employees:
+        print("⚠️ No se encontró empleado vinculado a ese partner")
+        return None
+
+    print(f"✅ Empleado encontrado ID={employees[0]}")
+    return employees[0]
+
+
+    response_employee = requests.post(url, json=payload_employee, verify=False).json()
+    employees = response_employee.get("result", [])
     return employees[0] if employees else None
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
