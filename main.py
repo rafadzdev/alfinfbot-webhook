@@ -9,6 +9,10 @@ app = Flask(__name__)
 
 VERIFY_TOKEN = "alfinfbot-token"
 
+
+# =====================
+# 🔹 VERIFICACIÓN WEBHOOK
+# =====================
 @app.route("/", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
@@ -20,6 +24,9 @@ def verify():
         return "Error: token inválido", 403
 
 
+# =====================
+# 🔹 RECEPCIÓN DE MENSAJES
+# =====================
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -27,24 +34,29 @@ def webhook():
 
     try:
         entry = data["entry"][0]["changes"][0]["value"]
+
+        # Solo procesar si contiene mensajes reales
         if "messages" in entry:
             mensaje = entry["messages"][0]
             numero = mensaje["from"]
-            texto = mensaje["text"]["body"].strip().lower()
+            texto = mensaje.get("text", {}).get("body", "").strip().lower()
 
-        if texto == "entrada":
-            resultado = crear_entrada_odoo(numero)
-            if resultado:
-                enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
+            if texto == "entrada":
+                resultado = crear_entrada_odoo(numero)
+                if resultado:
+                    enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
+                else:
+                    enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
+
+            elif texto == "listado":
+                listado = obtener_listado_contactos()
+                enviar_mensaje(numero, listado)
+
             else:
-                enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
-        
-        elif texto == "listado":
-            listado = obtener_listado_contactos()
-            enviar_mensaje(numero, listado)
-        
+                enviar_mensaje(numero, "No te entendí. Escribe 'entrada' o 'listado'.")
+
         else:
-            enviar_mensaje(numero, "No te entendí. Escribe 'entrada' o 'listado'.")
+            print("ℹ️ Evento sin mensajes (solo estado de entrega). Ignorado.")
 
     except Exception as e:
         print("⚠️ Error procesando mensaje:", e)
@@ -52,6 +64,9 @@ def webhook():
     return "EVENT_RECEIVED", 200
 
 
+# =====================
+# 🔹 ENVÍO DE MENSAJES A WHATSAPP
+# =====================
 def enviar_mensaje(numero, texto):
     url = f"https://graph.facebook.com/v20.0/{os.environ['META_PHONE_ID']}/messages"
     headers = {
@@ -70,6 +85,9 @@ def enviar_mensaje(numero, texto):
         print("⚠️ Error enviando mensaje:", e)
 
 
+# =====================
+# 🔹 CREAR ENTRADA EN ODOO
+# =====================
 def crear_entrada_odoo(numero):
     print(f"🔎 Buscando empleado con número: {numero}")
     employee_id = buscar_empleado_por_numero(numero)
@@ -88,7 +106,7 @@ def crear_entrada_odoo(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID usuario admin
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
                 "create",
@@ -104,6 +122,10 @@ def crear_entrada_odoo(numero):
     print("📤 Respuesta Odoo:", response.text)
     return True
 
+
+# =====================
+# 🔹 OBTENER CONTACTOS DE ODOO
+# =====================
 def obtener_listado_contactos():
     print("📋 Solicitando listado de contactos en res.partner...")
 
@@ -116,12 +138,12 @@ def obtener_listado_contactos():
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID del usuario admin
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "res.partner",
                 "search_read",
                 [[], ["name", "phone", "mobile", "email"]],
-                {"limit": 20}  # 🔹 Muestra los primeros 20 contactos
+                {"limit": 20}
             ]
         }
     }
@@ -139,15 +161,17 @@ def obtener_listado_contactos():
             phone = p.get("phone") or p.get("mobile") or "Sin teléfono"
             email = p.get("email") or "-"
             texto += f"\n• {nombre} ({phone}) 📧 {email}"
-        return texto[:3900]  # Límite de 4096 caracteres por mensaje WhatsApp
+        return texto[:3900]  # límite de 4096 caracteres por mensaje
 
     except Exception as e:
         print("⚠️ Error obteniendo listado:", e)
         return "❌ Error al obtener el listado desde Odoo."
 
 
+# =====================
+# 🔹 BUSCAR EMPLEADO POR TELÉFONO
+# =====================
 def buscar_empleado_por_numero(numero):
-    # 🔧 Normalizar el número recibido desde WhatsApp
     numero = numero.replace("+", "").replace(" ", "")
     if numero.startswith("34"):
         numero = numero[2:]
@@ -156,7 +180,7 @@ def buscar_empleado_por_numero(numero):
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
-    # Buscar en res.partner por phone o mobile (ilike para ignorar formato)
+    # Buscar en res.partner
     payload_partner = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -165,7 +189,7 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,  # ID admin o usuario API
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "res.partner",
                 "search",
@@ -188,7 +212,7 @@ def buscar_empleado_por_numero(numero):
     partner_id = partners[0]
     print(f"✅ Contacto encontrado en res.partner ID={partner_id}")
 
-    # Buscar el empleado vinculado al partner
+    # Buscar el empleado vinculado
     payload_employee = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -197,7 +221,7 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                2,
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.employee",
                 "search",
@@ -217,24 +241,8 @@ def buscar_empleado_por_numero(numero):
     return employees[0]
 
 
-    response_employee = requests.post(url, json=payload_employee, verify=False).json()
-    employees = response_employee.get("result", [])
-
-    if not employees:
-        print("⚠️ No se encontró empleado vinculado a ese partner")
-        return None
-
-    print(f"✅ Empleado encontrado ID={employees[0]}")
-    return employees[0]
-
-
-    response_employee = requests.post(url, json=payload_employee, verify=False).json()
-    employees = response_employee.get("result", [])
-    return employees[0] if employees else None
-
-
+# =====================
+# 🔹 MAIN
+# =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-
-
