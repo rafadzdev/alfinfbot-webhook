@@ -131,7 +131,7 @@ def crear_entrada_odoo(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                os.environ["ODOO_USER"],
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
                 "create",
@@ -167,7 +167,7 @@ def crear_salida_odoo(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                os.environ["ODOO_USER"],
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
                 "create",
@@ -289,6 +289,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
