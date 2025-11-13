@@ -195,14 +195,21 @@ def obtener_listado_contactos():
         "jsonrpc": "2.0",
         "method": "call",
         "params": {
-            "model": "res.partner",
-            "method": "search_read",
-            "args": [],
-            "kwargs": {
-                "domain": [],
-                "fields": ["id", "name", "phone", "mobile", "email"],
-                "order": "id"
-            }
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                os.environ["ODOO_DB"],
+                int(os.environ["ODOO_USER"]),       # UID numérico
+                os.environ["ODOO_PASS"],
+                "res.partner",
+                "search_read",
+                [[]],                                # dominio vacío
+                {
+                    "fields": ["id", "name", "phone", "mobile", "email"],
+                    "order": "id",
+                    "limit": 50
+                }
+            ]
         }
     }
 
@@ -211,7 +218,11 @@ def obtener_listado_contactos():
         print("📥 Respuesta RAW Odoo:", response_raw.text)
 
         response = response_raw.json()
-        partners = response.get("result", [])
+
+        if "result" not in response:
+            return "⚠️ Odoo devolvió un error. Revisa logs."
+
+        partners = response["result"]
 
         if not partners:
             return "⚠️ No se encontraron contactos en Odoo."
@@ -309,6 +320,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
