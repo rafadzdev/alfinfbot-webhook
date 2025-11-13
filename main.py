@@ -243,15 +243,16 @@ def obtener_listado_contactos():
 # 🔹 BUSCAR EMPLEADO POR TELÉFONO
 # =====================
 def buscar_empleado_por_numero(numero):
-    numero = numero.replace("+", "").replace(" ", "")
-
-    if numero.startswith("34"):
+    # 1. Normalizar número entrante (WhatsApp)
+    numero = numero.replace("+", "").replace(" ", "").replace("-", "")
+    if numero.startswith("34"):   # quitar prefijo si viene con 34
         numero = numero[2:]
 
-    print(f"🔍 Buscando hr.employee con mobile_phone ilike {numero}")
+    print(f"🔍 Buscando empleado con número normalizado: {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
+    # 2. Traer todos los empleados que tengan teléfono
     payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -263,8 +264,12 @@ def buscar_empleado_por_numero(numero):
                 int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.employee",
-                "search",
-                [[["mobile_phone", "ilike", numero]]]
+                "search_read",
+                [[["mobile_phone", "!=", False]]],
+                {
+                    "fields": ["id", "name", "mobile_phone"],
+                    "limit": 500
+                }
             ]
         }
     }
@@ -273,14 +278,24 @@ def buscar_empleado_por_numero(numero):
     print("📥 RAW Odoo búsqueda:", response_raw.text)
 
     response = response_raw.json()
-    employees = response.get("result", [])
+    empleados = response.get("result", [])
 
-    if not employees:
-        print("⚠️ No se encontró empleado con ese número")
-        return None
+    # 3. Normalizar cada teléfono del empleado y comparar
+    for emp in empleados:
+        tel = emp.get("mobile_phone") or ""
+        tel_norm = tel.replace("+", "").replace(" ", "").replace("-", "")
 
-    print(f"✅ Empleado encontrado ID={employees[0]}")
-    return employees[0]
+        if tel_norm.startswith("34"):
+            tel_norm = tel_norm[2:]
+
+        print(f"🔎 Comparando {tel_norm} con {numero}")
+
+        if tel_norm == numero:
+            print(f"✅ EMPLEADO ENCONTRADO: {emp['name']} ID={emp['id']}")
+            return emp["id"]
+
+    print("⚠️ No se encontró empleado con ese número normalizado")
+    return None
 
 
 
@@ -289,6 +304,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
