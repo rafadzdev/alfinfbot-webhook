@@ -35,42 +35,57 @@ def webhook():
     try:
         entry = data["entry"][0]["changes"][0]["value"]
 
-        # ✅ Solo procesar si contiene mensajes (no estados)
-        if "messages" in entry:
-            mensaje = entry["messages"][0]
-            numero = mensaje.get("from")
+        # Solo procesar mensajes reales, ignorar estados
+        if "messages" not in entry:
+            print("ℹ️ Evento sin mensajes (solo estados). Ignorado.")
+            return "EVENT_RECEIVED", 200
 
-            # ✅ Obtener texto del mensaje si existe
-            texto = mensaje.get("text", {}).get("body", "")
-            if not texto:
-                print("⚠️ Mensaje sin texto. Ignorado.")
-                return "EVENT_RECEIVED", 200
+        mensaje = entry["messages"][0]
+        numero = mensaje.get("from")
+        texto = mensaje.get("text", {}).get("body", "")
 
-            # Normalizar texto
-            texto = texto.strip().lower()
-            print(f"💬 Mensaje de {numero}: {texto}")
+        if not texto:
+            print("⚠️ Mensaje sin texto. Ignorado.")
+            return "EVENT_RECEIVED", 200
 
-            if texto == "entrada":
-                resultado = crear_entrada_odoo(numero)
-                if resultado:
-                    enviar_mensaje(numero, "✅ Entrada registrada correctamente en Odoo.")
-                else:
-                    enviar_mensaje(numero, "⚠️ No se encontró tu usuario en Odoo.")
+        texto = texto.strip().lower()
+        print(f"💬 Mensaje de {numero}: {texto}")
 
-            elif texto == "listado":
-                listado = obtener_listado_contactos()
-                enviar_mensaje(numero, listado)
+        # ==========================
+        # 🔹 COMANDOS WHATSAPP
+        # ==========================
+        if texto == "listado":
+            listado = obtener_listado_contactos()
+            enviar_mensaje(numero, listado)
 
+        elif texto == "entrada":
+            ok = crear_entrada_odoo(numero)
+            if ok:
+                enviar_mensaje(numero, "✅ Entrada registrada correctamente.")
             else:
-                enviar_mensaje(numero, "No te entendí. Escribe 'entrada' o 'listado'.")
+                enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
+
+        elif texto == "salida":
+            ok = crear_salida_odoo(numero)
+            if ok:
+                enviar_mensaje(numero, "📤 Salida registrada correctamente.")
+            else:
+                enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
 
         else:
-            print("ℹ️ Evento sin mensajes (solo estado de entrega o lectura). Ignorado.")
+            enviar_mensaje(
+                numero,
+                "No te entendí. Escribe:\n\n"
+                "• *listado* → Ver contactos\n"
+                "• *entrada* → Registrar entrada\n"
+                "• *salida* → Registrar salida"
+            )
 
     except Exception as e:
         print("⚠️ Error procesando mensaje:", e)
 
     return "EVENT_RECEIVED", 200
+
 
 
 
@@ -132,6 +147,41 @@ def crear_entrada_odoo(numero):
     print("📤 Respuesta Odoo:", response.text)
     return True
 
+
+
+def crear_salida_odoo(numero):
+    print(f"🔎 Buscando empleado para salida: {numero}")
+    employee_id = buscar_empleado_por_numero(numero)
+    if not employee_id:
+        print("⚠️ Empleado no encontrado en Odoo")
+        return False
+
+    url = f"{os.environ['ODOO_URL']}/jsonrpc"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                os.environ["ODOO_DB"],
+                os.environ["ODOO_USER"],
+                os.environ["ODOO_PASS"],
+                "hr.attendance",
+                "create",
+                [{
+                    "employee_id": employee_id,
+                    "check_out": now
+                }]
+            ]
+        }
+    }
+
+    response = requests.post(url, json=payload, verify=False)
+    print("📤 Respuesta Odoo:", response.text)
+    return True
 
 # =====================
 # 🔹 OBTENER CONTACTOS DE ODOO
@@ -256,5 +306,6 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
