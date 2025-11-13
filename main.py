@@ -187,7 +187,7 @@ def crear_salida_odoo(numero):
 # 🔹 OBTENER CONTACTOS DE ODOO
 # =====================
 def obtener_listado_contactos():
-    print("📋 Solicitando listado de contactos en res.partner...")
+    print("📋 Solicitando listado de empleados en hr.employee...")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
@@ -199,15 +199,15 @@ def obtener_listado_contactos():
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                int(os.environ["ODOO_USER"]),       # UID numérico
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
-                "res.partner",
+                "hr.employee",
                 "search_read",
-                [[]],                                # dominio vacío
+                [[]],   # dominio vacío: todos los empleados
                 {
-                    "fields": ["id", "name", "phone", "mobile", "email"],
-                    "order": "id",
-                    "limit": 50
+                    "fields": ["id", "name", "mobile_phone", "work_email"],
+                    "order": "name",
+                    "limit": 200
                 }
             ]
         }
@@ -215,30 +215,27 @@ def obtener_listado_contactos():
 
     try:
         response_raw = requests.post(url, json=payload, verify=False)
-        print("📥 Respuesta RAW Odoo:", response_raw.text)
+        print("📥 RAW Odoo:", response_raw.text)
 
         response = response_raw.json()
+        employees = response.get("result", [])
 
-        if "result" not in response:
-            return "⚠️ Odoo devolvió un error. Revisa logs."
+        if not employees:
+            return "⚠️ No se encontraron empleados."
 
-        partners = response["result"]
-
-        if not partners:
-            return "⚠️ No se encontraron contactos en Odoo."
-
-        texto = "📋 *Listado de contactos:*\n"
-        for p in partners:
-            nombre = p.get("name", "Sin nombre")
-            phone = p.get("phone") or p.get("mobile") or "Sin teléfono"
-            email = p.get("email") or "-"
-            texto += f"\n• {nombre} ({phone}) 📧 {email}"
+        texto = "📋 *Listado de empleados:*\n"
+        for emp in employees:
+            name = emp.get("name", "Sin nombre")
+            phone = emp.get("mobile_phone") or "Sin teléfono"
+            email = emp.get("work_email") or "-"
+            texto += f"\n• {name} ({phone}) 📧 {email}"
 
         return texto[:3900]
 
     except Exception as e:
-        print("⚠️ Error obteniendo listado:", e)
-        return "❌ Error al obtener el listado desde Odoo."
+        print("⚠️ Error:", e)
+        return "❌ Error al obtener empleados."
+
 
 
 
@@ -247,15 +244,15 @@ def obtener_listado_contactos():
 # =====================
 def buscar_empleado_por_numero(numero):
     numero = numero.replace("+", "").replace(" ", "")
+
     if numero.startswith("34"):
         numero = numero[2:]
 
-    print(f"🔍 Buscando empleado vinculado al partner con teléfono o móvil: {numero}")
+    print(f"🔍 Buscando hr.employee con mobile_phone ilike {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
-    # Buscar en res.partner
-    payload_partner = {
+    payload = {
         "jsonrpc": "2.0",
         "method": "call",
         "params": {
@@ -263,56 +260,28 @@ def buscar_empleado_por_numero(numero):
             "method": "execute_kw",
             "args": [
                 os.environ["ODOO_DB"],
-                os.environ["ODOO_USER"],
-                os.environ["ODOO_PASS"],
-                "res.partner",
-                "search",
-                [[
-                    "|",
-                    ["phone", "ilike", numero],
-                    ["mobile", "ilike", numero]
-                ]]
-            ]
-        }
-    }
-
-    response_partner = requests.post(url, json=payload_partner, verify=False).json()
-    partners = response_partner.get("result", [])
-
-    if not partners:
-        print("⚠️ No se encontró ningún contacto con ese número en res.partner")
-        return None
-
-    partner_id = partners[0]
-    print(f"✅ Contacto encontrado en res.partner ID={partner_id}")
-
-    # Buscar el empleado vinculado
-    payload_employee = {
-        "jsonrpc": "2.0",
-        "method": "call",
-        "params": {
-            "service": "object",
-            "method": "execute_kw",
-            "args": [
-                os.environ["ODOO_DB"],
-                os.environ["ODOO_USER"],
+                int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.employee",
                 "search",
-                [[["address_home_id", "=", partner_id]]]
+                [[["mobile_phone", "ilike", numero]]]
             ]
         }
     }
 
-    response_employee = requests.post(url, json=payload_employee, verify=False).json()
-    employees = response_employee.get("result", [])
+    response_raw = requests.post(url, json=payload, verify=False)
+    print("📥 RAW Odoo búsqueda:", response_raw.text)
+
+    response = response_raw.json()
+    employees = response.get("result", [])
 
     if not employees:
-        print("⚠️ No se encontró empleado vinculado a ese partner")
+        print("⚠️ No se encontró empleado con ese número")
         return None
 
     print(f"✅ Empleado encontrado ID={employees[0]}")
     return employees[0]
+
 
 
 # =====================
@@ -320,6 +289,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
