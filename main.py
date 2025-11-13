@@ -190,26 +190,27 @@ def obtener_listado_contactos():
     print("📋 Solicitando listado de contactos en res.partner...")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
+
     payload = {
         "jsonrpc": "2.0",
         "method": "call",
         "params": {
-            "service": "object",
-            "method": "execute_kw",
-            "args": [
-                os.environ["ODOO_DB"],
-                os.environ["ODOO_USER"],
-                os.environ["ODOO_PASS"],
-                "res.partner",
-                "search_read",
-                [[], ["name", "phone", "mobile", "email"]],
-                {"limit": 20}
-            ]
+            "model": "res.partner",
+            "method": "search_read",
+            "args": [],
+            "kwargs": {
+                "domain": [],
+                "fields": ["id", "name", "phone", "mobile", "email"],
+                "order": "id"
+            }
         }
     }
 
     try:
-        response = requests.post(url, json=payload, verify=False).json()
+        response_raw = requests.post(url, json=payload, verify=False)
+        print("📥 Respuesta RAW Odoo:", response_raw.text)
+
+        response = response_raw.json()
         partners = response.get("result", [])
 
         if not partners:
@@ -221,11 +222,13 @@ def obtener_listado_contactos():
             phone = p.get("phone") or p.get("mobile") or "Sin teléfono"
             email = p.get("email") or "-"
             texto += f"\n• {nombre} ({phone}) 📧 {email}"
-        return texto[:3900]  # límite de 4096 caracteres por mensaje
+
+        return texto[:3900]
 
     except Exception as e:
         print("⚠️ Error obteniendo listado:", e)
         return "❌ Error al obtener el listado desde Odoo."
+
 
 
 # =====================
@@ -306,6 +309,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
