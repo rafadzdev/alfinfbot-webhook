@@ -110,20 +110,75 @@ def enviar_mensaje(numero, texto):
         print("⚠️ Error enviando mensaje:", e)
 
 
+def obtener_ultima_asistencia(employee_id):
+    url = f"{os.environ['ODOO_URL']}/jsonrpc"
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                os.environ["ODOO_DB"],
+                int(os.environ["ODOO_USER"]),
+                os.environ["ODOO_PASS"],
+                "hr.attendance",
+                "search_read",
+                [[["employee_id", "=", employee_id]]],
+                {
+                    "fields": ["id", "check_in", "check_out"],
+                    "order": "id desc",
+                    "limit": 1
+                }
+            ]
+        }
+    }
+
+    response = requests.post(url, json=payload, verify=False).json()
+    result = response.get("result", [])
+
+    return result[0] if result else None
+
+
+
 # =====================
 # 🔹 CREAR ENTRADA EN ODOO
 # =====================
 def crear_entrada_odoo(numero):
-    print(f"🔎 Buscando empleado con número: {numero}")
     employee_id = buscar_empleado_por_numero(numero)
     if not employee_id:
-        print("⚠️ Empleado no encontrado en Odoo")
         return False
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    payload = {
+    # Buscar última asistencia
+    ultima = obtener_ultima_asistencia(employee_id)
+
+    # Si existe y no tiene salida → cerrarla automáticamente
+    if ultima and not ultima.get("check_out"):
+        print("🔧 Corrigiendo asistencia anterior sin salida…")
+        payload_fix = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    os.environ["ODOO_DB"],
+                    int(os.environ["ODOO_USER"]),
+                    os.environ["ODOO_PASS"],
+                    "hr.attendance",
+                    "write",
+                    [[ultima["id"]], {"check_out": now}]
+                ]
+            }
+        }
+        requests.post(url, json=payload_fix, verify=False)
+
+    # Crear nueva entrada
+    payload_new = {
         "jsonrpc": "2.0",
         "method": "call",
         "params": {
@@ -142,23 +197,31 @@ def crear_entrada_odoo(numero):
             ]
         }
     }
-
-    response = requests.post(url, json=payload, verify=False)
-    print("📤 Respuesta Odoo:", response.text)
+    requests.post(url, json=payload_new, verify=False)
     return True
 
 
 
 def crear_salida_odoo(numero):
-    print(f"🔎 Buscando empleado para salida: {numero}")
     employee_id = buscar_empleado_por_numero(numero)
     if not employee_id:
-        print("⚠️ Empleado no encontrado en Odoo")
         return False
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # Buscar última asistencia
+    ultima = obtener_ultima_asistencia(employee_id)
+
+    if not ultima:
+        print("⚠️ No existen asistencias previas.")
+        return False
+
+    if ultima.get("check_out"):
+        print("⚠️ Ya tenía salida marcada.")
+        return False
+
+    # Marcar salida
     payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -170,18 +233,15 @@ def crear_salida_odoo(numero):
                 int(os.environ["ODOO_USER"]),
                 os.environ["ODOO_PASS"],
                 "hr.attendance",
-                "create",
-                [{
-                    "employee_id": employee_id,
-                    "check_out": now
-                }]
+                "write",
+                [[ultima["id"]], {"check_out": now}]
             ]
         }
     }
 
-    response = requests.post(url, json=payload, verify=False)
-    print("📤 Respuesta Odoo:", response.text)
+    requests.post(url, json=payload, verify=False)
     return True
+
 
 # =====================
 # 🔹 OBTENER CONTACTOS DE ODOO
@@ -304,6 +364,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
