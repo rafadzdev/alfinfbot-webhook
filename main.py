@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import requests, os, json, urllib3, traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Desactivar advertencias SSL (si el servidor Odoo no tiene cadena completa)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -199,7 +199,7 @@ def crear_entrada_odoo(numero):
         }
     }
     requests.post(url, json=payload_new, verify=False)
-    return True, employee_name, now
+    return True, employee_name, (datetime.strptime(now, "%Y-%m-%d %H:%M:%S") + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 
@@ -236,7 +236,7 @@ def crear_salida_odoo(numero):
     }
 
     requests.post(url, json=payload, verify=False)
-    return True, employee_name, now
+    return True, employee_name, (datetime.strptime(now, "%Y-%m-%d %H:%M:%S") + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 
@@ -341,3 +341,4 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
