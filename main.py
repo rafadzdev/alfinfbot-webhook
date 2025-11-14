@@ -68,10 +68,9 @@ def webhook():
                 enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
 
         elif texto == "salida":
-        ok, name, hora = crear_salida_odoo(numero)
-        if ok:
-            enviar_mensaje(numero, f"📤 Salida registrada correctamente:\n\n👤 {name}\n⏰ {hora}")
-
+            ok, name, hora = crear_salida_odoo(numero)
+            if ok:
+                enviar_mensaje(numero, f"📤 Salida registrada correctamente:\n\n👤 {name}\n⏰ {hora}")
             else:
                 enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
 
@@ -350,6 +349,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
