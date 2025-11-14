@@ -59,16 +59,19 @@ def webhook():
             enviar_mensaje(numero, listado)
 
         elif texto == "entrada":
-            ok = crear_entrada_odoo(numero)
+            ok, name, hora = crear_entrada_odoo(numero)
             if ok:
-                enviar_mensaje(numero, "✅ Entrada registrada correctamente.")
+                enviar_mensaje(numero, f"✅ Entrada registrada correctamente:\n\n👤 {name}\n⏰ {hora}")
+
+
             else:
                 enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
 
         elif texto == "salida":
-            ok = crear_salida_odoo(numero)
-            if ok:
-                enviar_mensaje(numero, "📤 Salida registrada correctamente.")
+        ok, name, hora = crear_salida_odoo(numero)
+        if ok:
+            enviar_mensaje(numero, f"📤 Salida registrada correctamente:\n\n👤 {name}\n⏰ {hora}")
+
             else:
                 enviar_mensaje(numero, "⚠️ No se encontró un empleado con tu número.")
 
@@ -146,19 +149,17 @@ def obtener_ultima_asistencia(employee_id):
 # 🔹 CREAR ENTRADA EN ODOO
 # =====================
 def crear_entrada_odoo(numero):
-    employee_id = buscar_empleado_por_numero(numero)
+    employee_id, employee_name = buscar_empleado_por_numero(numero)
     if not employee_id:
-        return False
+        return False, None, None
 
-    url = f"{os.environ['ODOO_URL']}/jsonrpc"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Buscar última asistencia
+    # Cerrar asistencia anterior abierta
     ultima = obtener_ultima_asistencia(employee_id)
+    url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
-    # Si existe y no tiene salida → cerrarla automáticamente
     if ultima and not ultima.get("check_out"):
-        print("🔧 Corrigiendo asistencia anterior sin salida…")
         payload_fix = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -198,30 +199,23 @@ def crear_entrada_odoo(numero):
         }
     }
     requests.post(url, json=payload_new, verify=False)
-    return True
+    return True, employee_name, now
 
 
 
 def crear_salida_odoo(numero):
-    employee_id = buscar_empleado_por_numero(numero)
+    employee_id, employee_name = buscar_empleado_por_numero(numero)
     if not employee_id:
-        return False
+        return False, None, None
 
-    url = f"{os.environ['ODOO_URL']}/jsonrpc"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Buscar última asistencia
     ultima = obtener_ultima_asistencia(employee_id)
-
     if not ultima:
-        print("⚠️ No existen asistencias previas.")
-        return False
-
+        return False, None, None
     if ultima.get("check_out"):
-        print("⚠️ Ya tenía salida marcada.")
-        return False
+        return False, None, None
 
-    # Marcar salida
     payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -238,9 +232,11 @@ def crear_salida_odoo(numero):
             ]
         }
     }
-
+    url = f"{os.environ['ODOO_URL']}/jsonrpc"
     requests.post(url, json=payload, verify=False)
-    return True
+
+    return True, employee_name, now
+
 
 
 # =====================
@@ -305,14 +301,11 @@ def obtener_listado_contactos():
 def buscar_empleado_por_numero(numero):
     # 1. Normalizar número entrante (WhatsApp)
     numero = numero.replace("+", "").replace(" ", "").replace("-", "")
-    if numero.startswith("34"):   # quitar prefijo si viene con 34
+    if numero.startswith("34"):
         numero = numero[2:]
-
-    print(f"🔍 Buscando empleado con número normalizado: {numero}")
 
     url = f"{os.environ['ODOO_URL']}/jsonrpc"
 
-    # 2. Traer todos los empleados que tengan teléfono
     payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -335,12 +328,9 @@ def buscar_empleado_por_numero(numero):
     }
 
     response_raw = requests.post(url, json=payload, verify=False)
-    print("📥 RAW Odoo búsqueda:", response_raw.text)
-
     response = response_raw.json()
     empleados = response.get("result", [])
 
-    # 3. Normalizar cada teléfono del empleado y comparar
     for emp in empleados:
         tel = emp.get("mobile_phone") or ""
         tel_norm = tel.replace("+", "").replace(" ", "").replace("-", "")
@@ -348,14 +338,10 @@ def buscar_empleado_por_numero(numero):
         if tel_norm.startswith("34"):
             tel_norm = tel_norm[2:]
 
-        print(f"🔎 Comparando {tel_norm} con {numero}")
-
         if tel_norm == numero:
-            print(f"✅ EMPLEADO ENCONTRADO: {emp['name']} ID={emp['id']}")
-            return emp["id"]
+            return emp["id"], emp["name"]
 
-    print("⚠️ No se encontró empleado con ese número normalizado")
-    return None
+    return None, None
 
 
 
@@ -364,6 +350,7 @@ def buscar_empleado_por_numero(numero):
 # =====================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 
 
